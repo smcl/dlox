@@ -1,0 +1,15 @@
+.dub
+docs.json
+__dummy.html
+docs/
+/dlox
+dlox.so
+dlox.dylib
+dlox.dll
+dlox.a
+dlox.lib
+dlox-test-*
+*.exe
+*.o
+*.obj
+*.lst

@@ -1,0 +1,9 @@
+{
+	"authors": [
+		"Sean McLemon"
+	],
+	"copyright": "Copyright © 2021, Sean McLemon",
+	"description": "Crafting Interpeters bytecode interpreter implemented in D",
+	"license": "MIT",
+	"name": "dlox"
+}
