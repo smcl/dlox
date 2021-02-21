@@ -4,8 +4,13 @@ import value;
 import std.conv;
 
 enum OpCode: ubyte {
-    OP_CONSTANT,
-    OP_RETURN
+    CONSTANT,
+    ADD,
+    SUBTRACT,
+    MULTIPLY,
+    DIVIDE,
+    NEGATE,
+    RETURN
 }
 
 int grow_capacity(int capacity) {

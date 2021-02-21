@@ -7,8 +7,12 @@ import value;
 int constantInstruction(string name, Chunk *chunk, int offset) {
     const ubyte constant = chunk.code[offset + 1];
     writef("%-16s %4d '", name, constant);
-    printValue(chunk.constants.values[constant]);
+    writeValue(chunk.constants.values[constant]);
     writef("'\n");
+
+    // writef("\t offset = %d\n", offset);
+    // writef("\t constant = %d\n", constant);
+
     return offset + 2;
 }
 
@@ -20,7 +24,7 @@ int simpleInstruction(string name, int offset) {
 int disassembleInstruction(Chunk *chunk, int offset) {
     writef("%04d ", offset);
 
-    if (offset > 0 && chunk.lines[offset] == chunk.lines[offset - 1]) {
+    if (false && offset > 0 && chunk.lines[offset] == chunk.lines[offset - 1]) {
         writef("   | ");
     } else {
         writef("%4d ", chunk.lines[offset]);
@@ -29,10 +33,20 @@ int disassembleInstruction(Chunk *chunk, int offset) {
     ubyte instruction = chunk.code[offset];
 
     switch (instruction) {
-        case OpCode.OP_CONSTANT:
-            return constantInstruction("OP_CONSTANT", chunk, offset);
-        case OpCode.OP_RETURN:
-            return simpleInstruction("OP_RETURN", offset);
+        case OpCode.CONSTANT:
+            return constantInstruction("CONSTANT", chunk, offset);
+        case OpCode.ADD:
+            return simpleInstruction("ADD", offset);
+        case OpCode.SUBTRACT:
+            return simpleInstruction("SUBTRACT", offset);
+        case OpCode.MULTIPLY:
+            return simpleInstruction("MULTIPLY", offset);
+        case OpCode.DIVIDE:
+            return simpleInstruction("DIVIDE", offset);                        
+        case OpCode.NEGATE:
+            return simpleInstruction("NEGATE", offset);
+        case OpCode.RETURN:
+            return simpleInstruction("RETURN", offset);
         default:
             writefln("Unknown opcode %d\n", instruction);
             return offset + 1;

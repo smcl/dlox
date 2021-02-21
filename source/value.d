@@ -6,7 +6,7 @@ import common;
 
 alias Value = Typedef!double;
 
-void printValue(Value v) {
+void writeValue(Value v) {
     writef("%g", v);
 }
 
