@@ -55,8 +55,16 @@ void runFile(string path) {
 }
 
 InterpretResult interpret(string source) {
-	compile(source);
-	return InterpretResult.OK;
+	Chunk* chunk = new Chunk(8);
+	
+	if (!compile(source, chunk)) {
+		return InterpretResult.COMPILE_ERROR;
+	}
+
+	vm.chunk = chunk;
+	vm.ip = 0;
+	
+	return run();
 }
 
 

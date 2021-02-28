@@ -200,6 +200,8 @@ bool samesies(string str1, string str2, size_t length) {
 unittest {
     assert(samesies("test", "test123", 4));
     assert(samesies("test1234", "test", 4));
+    assert(samesies("", "", 0));
+    assert(!samesies("", "", 1));
     assert(!samesies("", "test", 4));
     assert(!samesies("test", "", 4));
  }

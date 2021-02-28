@@ -33,6 +33,7 @@ void resetStack() {
 InterpretResult interpret(Chunk *chunk) {
     vm.chunk = chunk;
     vm.ip = 0;
+
     return run();
 }
 
