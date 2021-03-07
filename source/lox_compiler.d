@@ -30,11 +30,11 @@ enum Precedence {
     PRIMARY
 }
 
-alias ParseFunc = Typedef!(void function());
+alias ParseFunc = void function();
 
 struct ParseRule { 
-    void function() prefix;
-    void function() infix;
+    ParseFunc prefix;
+    ParseFunc infix;
     Precedence precedence;
 }
 
@@ -145,10 +145,27 @@ void binary() {
     parsePrecedence(to!Precedence(rule.precedence + 1));
 
     switch (operatorType) {
-        case TokenType.PLUS:  emitByte(OpCode.ADD); break;
-        case TokenType.MINUS: emitByte(OpCode.SUBTRACT); break;
-        case TokenType.STAR:  emitByte(OpCode.MULTIPLY); break;
-        case TokenType.SLASH: emitByte(OpCode.DIVIDE); break;
+        case TokenType.BANG_EQUAL:    emitBytes(OpCode.EQUAL, OpCode.NOT);   break;
+        case TokenType.EQUAL_EQUAL:   emitByte(OpCode.EQUAL);                break;
+        case TokenType.GREATER:       emitByte(OpCode.GREATER);              break;
+        case TokenType.GREATER_EQUAL: emitBytes(OpCode.LESS, OpCode.NOT);    break;
+        case TokenType.LESS:          emitByte(OpCode.LESS);                 break;
+        case TokenType.LESS_EQUAL:    emitBytes(OpCode.GREATER, OpCode.NOT); break;
+        case TokenType.PLUS:          emitByte(OpCode.ADD);                  break;
+        case TokenType.MINUS:         emitByte(OpCode.SUBTRACT);             break;
+        case TokenType.STAR:          emitByte(OpCode.MULTIPLY);             break;
+        case TokenType.SLASH:         emitByte(OpCode.DIVIDE);               break;
+        default:
+            return;
+    }
+}
+
+void literal() {
+    const TokenType operatorType = parser.previous.type;
+    switch (operatorType) {
+        case TokenType.TRUE:  emitByte(OpCode.TRUE);  break;
+        case TokenType.FALSE: emitByte(OpCode.FALSE); break;
+        case TokenType.NIL:   emitByte(OpCode.NIL);   break;
         default:
             return;
     }
@@ -173,7 +190,9 @@ void unary() {
         case TokenType.MINUS:
             emitByte(OpCode.NEGATE);
             break;
-
+        case TokenType.BANG:
+            emitByte(OpCode.NOT);
+            break;
         default:
             return;
     }
@@ -186,45 +205,46 @@ void initRules() {
 
     // kinda annoying that I'm doing this at runtime :-/
     rules = [
-        TokenType.RIGHT_PAREN   : ParseRule(null,    null,    Precedence.NONE),
-        TokenType.LEFT_BRACE    : ParseRule(null,    null,    Precedence.NONE), 
-        TokenType.RIGHT_BRACE   : ParseRule(null,    null,    Precedence.NONE),
-        TokenType.COMMA         : ParseRule(null,    null,    Precedence.NONE),
-        TokenType.DOT           : ParseRule(null,    null,    Precedence.NONE),
-        TokenType.MINUS         : ParseRule(&unary,  &binary, Precedence.TERM),
-        TokenType.PLUS          : ParseRule(null,    &binary, Precedence.TERM),
-        TokenType.SEMICOLON     : ParseRule(null,    null,    Precedence.NONE),
-        TokenType.SLASH         : ParseRule(null,    &binary, Precedence.FACTOR),
-        TokenType.STAR          : ParseRule(null,    &binary, Precedence.FACTOR),
-        TokenType.BANG          : ParseRule(null,    null,    Precedence.NONE),
-        TokenType.BANG_EQUAL    : ParseRule(null,    null,    Precedence.NONE),
-        TokenType.EQUAL         : ParseRule(null,    null,    Precedence.NONE),
-        TokenType.EQUAL_EQUAL   : ParseRule(null,    null,    Precedence.NONE),
-        TokenType.GREATER       : ParseRule(null,    null,    Precedence.NONE),
-        TokenType.GREATER_EQUAL : ParseRule(null,    null,    Precedence.NONE),
-        TokenType.LESS          : ParseRule(null,    null,    Precedence.NONE),
-        TokenType.LESS_EQUAL    : ParseRule(null,    null,    Precedence.NONE),
-        TokenType.IDENTIFIER    : ParseRule(null,    null,    Precedence.NONE),
-        TokenType.STRING        : ParseRule(null,    null,    Precedence.NONE),
-        TokenType.NUMBER        : ParseRule(&number, null,    Precedence.NONE),
-        TokenType.AND           : ParseRule(null,    null,    Precedence.NONE),
-        TokenType.CLASS         : ParseRule(null,    null,    Precedence.NONE),
-        TokenType.ELSE          : ParseRule(null,    null,    Precedence.NONE),
-        TokenType.FALSE         : ParseRule(null,    null,    Precedence.NONE),
-        TokenType.FOR           : ParseRule(null,    null,    Precedence.NONE),
-        TokenType.FUN           : ParseRule(null,    null,    Precedence.NONE),
-        TokenType.IF            : ParseRule(null,    null,    Precedence.NONE),
-        TokenType.NIL           : ParseRule(null,    null,    Precedence.NONE),
-        TokenType.OR            : ParseRule(null,    null,    Precedence.NONE),
-        TokenType.PRINT         : ParseRule(null,    null,    Precedence.NONE),
-        TokenType.RETURN        : ParseRule(null,    null,    Precedence.NONE),
-        TokenType.SUPER         : ParseRule(null,    null,    Precedence.NONE),
-        TokenType.THIS          : ParseRule(null,    null,    Precedence.NONE),
-        TokenType.TRUE          : ParseRule(null,    null,    Precedence.NONE),
-        TokenType.VAR           : ParseRule(null,    null,    Precedence.NONE),
-        TokenType.WHILE         : ParseRule(null,    null,    Precedence.NONE),
-        TokenType.ERROR         : ParseRule(null,    null,    Precedence.NONE),
-        TokenType.EOF           : ParseRule(null,    null,    Precedence.NONE)
+        TokenType.LEFT_PAREN    : ParseRule(&grouping, null,    Precedence.NONE),
+        TokenType.RIGHT_PAREN   : ParseRule(null,      null,    Precedence.NONE),
+        TokenType.LEFT_BRACE    : ParseRule(null,      null,    Precedence.NONE), 
+        TokenType.RIGHT_BRACE   : ParseRule(null,      null,    Precedence.NONE),
+        TokenType.COMMA         : ParseRule(null,      null,    Precedence.NONE),
+        TokenType.DOT           : ParseRule(null,      null,    Precedence.NONE),
+        TokenType.MINUS         : ParseRule(&unary,    &binary, Precedence.TERM),
+        TokenType.PLUS          : ParseRule(null,      &binary, Precedence.TERM),
+        TokenType.SEMICOLON     : ParseRule(null,      null,    Precedence.NONE),
+        TokenType.SLASH         : ParseRule(null,      &binary, Precedence.FACTOR),
+        TokenType.STAR          : ParseRule(null,      &binary, Precedence.FACTOR),
+        TokenType.BANG          : ParseRule(&unary,    null,    Precedence.NONE),
+        TokenType.BANG_EQUAL    : ParseRule(null,      &binary, Precedence.EQUALITY),
+        TokenType.EQUAL         : ParseRule(null,      null,    Precedence.NONE),
+        TokenType.EQUAL_EQUAL   : ParseRule(null,      &binary, Precedence.EQUALITY),
+        TokenType.GREATER       : ParseRule(null,      &binary, Precedence.COMPARISON),
+        TokenType.GREATER_EQUAL : ParseRule(null,      &binary, Precedence.COMPARISON),
+        TokenType.LESS          : ParseRule(null,      &binary, Precedence.COMPARISON),
+        TokenType.LESS_EQUAL    : ParseRule(null,      &binary, Precedence.COMPARISON),
+        TokenType.IDENTIFIER    : ParseRule(null,      null,    Precedence.NONE),
+        TokenType.STRING        : ParseRule(null,      null,    Precedence.NONE),
+        TokenType.NUMBER        : ParseRule(&number,   null,    Precedence.NONE),
+        TokenType.AND           : ParseRule(null,      null,    Precedence.NONE),
+        TokenType.CLASS         : ParseRule(null,      null,    Precedence.NONE),
+        TokenType.ELSE          : ParseRule(null,      null,    Precedence.NONE),
+        TokenType.FALSE         : ParseRule(&literal,  null,    Precedence.NONE),
+        TokenType.FOR           : ParseRule(null,      null,    Precedence.NONE),
+        TokenType.FUN           : ParseRule(null,      null,    Precedence.NONE),
+        TokenType.IF            : ParseRule(null,      null,    Precedence.NONE),
+        TokenType.NIL           : ParseRule(&literal,  null,    Precedence.NONE),
+        TokenType.OR            : ParseRule(null,      null,    Precedence.NONE),
+        TokenType.PRINT         : ParseRule(null,      null,    Precedence.NONE),
+        TokenType.RETURN        : ParseRule(null,      null,    Precedence.NONE),
+        TokenType.SUPER         : ParseRule(null,      null,    Precedence.NONE),
+        TokenType.THIS          : ParseRule(null,      null,    Precedence.NONE),
+        TokenType.TRUE          : ParseRule(&literal,  null,    Precedence.NONE),
+        TokenType.VAR           : ParseRule(null,      null,    Precedence.NONE),
+        TokenType.WHILE         : ParseRule(null,      null,    Precedence.NONE),
+        TokenType.ERROR         : ParseRule(null,      null,    Precedence.NONE),
+        TokenType.EOF           : ParseRule(null,      null,    Precedence.NONE)
     ];
 }
 
