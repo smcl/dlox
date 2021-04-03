@@ -55,7 +55,10 @@ Value pop() {
     return vm.stack[vm.sp];
 }
 
-bool binary_op(Value function(double lhs, double rhs) op) {
+bool binary_op(
+    Value function(double lhs, double rhs) double_op,
+    Value function(Obj lhs, Obj rhs) object_op) {
+
     const Value b = pop();
     const Value a = pop();
 
@@ -63,7 +66,16 @@ bool binary_op(Value function(double lhs, double rhs) op) {
         (double aNum) =>
             b.visit!(
                 (double bNum) {
-                    const auto res = op(aNum, bNum);
+                    const auto res = double_op(aNum, bNum);
+                    push(res);
+                    return true;
+                },
+                (_) => false
+            ),
+        (Obj aObj) => 
+            b.visit!(
+                (Obj bObj) {
+                    const auto res = object_op(aObj, bObj);
                     push(res);
                     return true;
                 },
@@ -73,7 +85,7 @@ bool binary_op(Value function(double lhs, double rhs) op) {
     );
 
     if (!ok) {
-        runtimeError("Both operands must be numbers.");
+        runtimeError("Both operands must be numbers or strings.");
         return false;
     }
     
@@ -84,7 +96,26 @@ bool isFalsey(Value v) {
     return v.visit!(
         (double _) => false,
         (bool b)   => !b,
-        (nil _)    => true
+        (nil _)    => true,
+        (Obj o) => o.visit!(
+            (string s) => s.length == 0
+        )
+    );
+}
+
+Value doubleOpOnly(Obj a, Obj b) {
+    runtimeError("This is a .");
+    return Value(null);
+}
+
+Value objectAdd(Obj a, Obj b) {
+    return a.visit!(
+        (string aStr) => 
+            b.visit!(
+                (string bStr) => Value(Obj(aStr ~ bStr))
+                /* no other types in Obj */
+            ),
+        /* no other types in Obj */
     );
 }
 
@@ -124,37 +155,37 @@ InterpretResult run() {
                 push(Value(null));
                 break;
             case OpCode.GREATER:
-                const auto ok = binary_op((double a, double b) => cast(Value)(a > b));
+                const auto ok = binary_op((double a, double b) => cast(Value)(a > b), &doubleOpOnly);
                 if (!ok) {
                     return InterpretResult.RUNTIME_ERROR;
                 }
                 break;
             case OpCode.LESS:
-                const auto ok = binary_op((double a, double b) => cast(Value)(a < b));
+                const auto ok = binary_op((double a, double b) => cast(Value)(a < b), &doubleOpOnly);
                 if (!ok) {
                     return InterpretResult.RUNTIME_ERROR;
                 }
                 break;
             case OpCode.ADD:
-                const auto ok = binary_op((double a, double b) => cast(Value)(a + b));
+                const auto ok = binary_op((double a, double b) => cast(Value)(a + b), &objectAdd);
                 if (!ok) {
                     return InterpretResult.RUNTIME_ERROR;
                 }
                 break;
             case OpCode.SUBTRACT:
-                const auto ok = binary_op((double a, double b) => cast(Value)(a - b));
+                const auto ok = binary_op((double a, double b) => cast(Value)(a - b), &doubleOpOnly);
                 if (!ok) {
                     return InterpretResult.RUNTIME_ERROR;
                 }                
                 break;
             case OpCode.MULTIPLY:
-                const auto ok = binary_op((double a, double b) => cast(Value)(a * b));
+                const auto ok = binary_op((double a, double b) => cast(Value)(a * b), &doubleOpOnly);
                 if (!ok) {
                     return InterpretResult.RUNTIME_ERROR;
                 }                
                 break;
             case OpCode.DIVIDE:
-                const auto ok = binary_op((double a, double b) => cast(Value)(a / b));
+                const auto ok = binary_op((double a, double b) => cast(Value)(a / b), &doubleOpOnly);
                 if (!ok) {
                     return InterpretResult.RUNTIME_ERROR;
                 }
@@ -189,8 +220,6 @@ InterpretResult run() {
         }
     }
 }
-
-
 
 unittest {
     initVM();

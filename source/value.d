@@ -5,32 +5,14 @@ import std.typecons;
 import std.variant;
 import common;
 
-// TODO: don't know if this is necessary with the sum-typed
-//       Value that I'm using
-enum ValueType {
-    BOOL,
-    NIL,
-    NUMBER
-};
-
 alias nil = typeof(null);
+alias Value = Algebraic!(bool, nil, double, Obj);
+alias Obj = Algebraic!(string);
 
-alias Value = Algebraic!(bool, nil, double);
-
-ValueType getType(Value v) {
-    return v.visit!(
-        (double d) => ValueType.NUMBER,
-        (bool b)   => ValueType.BOOL,
-        (nil b)    => ValueType.BOOL
+void writeObject(Obj o) {
+    o.visit!(
+        (string s) => writef("%s", s)
     );
-}
-
-bool isBool(Value v) {
-    return getType(v) == ValueType.BOOL;
-}
-
-bool isNumber(Value v) {
-    return getType(v) == ValueType.NUMBER;
 }
 
 void writeValue(Value v) {
@@ -38,12 +20,13 @@ void writeValue(Value v) {
         (double d) => writef("%g", d),
         (bool b) { 
             if (b) { 
-                writef("true");
+                write("true");
             } else {
-                writef("false");
+                write("false");
             }
         },
-        (nil) => writef("nil")
+        (nil) => write("nil"),
+        (Obj o) => writeObject(o)
     );
 }
 
@@ -52,16 +35,36 @@ bool valuesEqual(Value a, Value b) {
         (double aNum) => 
             b.visit!(
                 (double bNum) => aNum == bNum,
-                (bool _) => false,
-                (nil _) => false
+                (_) => false
             ),
+            
         (bool aBool) =>
             b.visit!(
-                (double _) => false,
                 (bool bBool) => aBool == bBool,
-                (nil _) => false
+                (_) => false
             ),
-        (nil n) => false
+
+        (nil n) => false,
+
+        // TODO: This is wrong and needs to be filled out
+        (Obj aObj) => b.visit!(
+            (Obj bObj) => objectEqual(aObj, bObj),
+            (_) => false
+        )
+    );
+}
+
+bool objectEqual(Obj a, Obj b) {
+    return a.visit!(
+        (string aStr) => b.visit!(
+            (string bStr) { 
+                writefln("{%s} == {%s}", aStr, bStr);
+                return aStr == bStr;
+            },
+            // (string bStr) => aStr == bStr,
+            (_) => false
+        ),
+        (_) => false
     );
 }
 
