@@ -38,6 +38,7 @@ struct ParseRule {
     Precedence precedence;
 }
 
+Scanner scanner;
 Parser parser;
 
 Chunk* compilingChunk;
@@ -81,7 +82,7 @@ void advance(){
     parser.previous = parser.current;
 
     while (true) {
-        parser.current = scanToken();
+        parser.current = scanner.scanToken();
 
         if (parser.current.type != TokenType.ERROR) {
             break;
@@ -285,7 +286,7 @@ void expression() {
 
 bool compile(string source, Chunk *chunk) {
     initRules();
-    initScanner(source);
+    scanner = new Scanner(source);
     compilingChunk = chunk;
 
     parser.hadError = false;
@@ -296,20 +297,4 @@ bool compile(string source, Chunk *chunk) {
     consume(TokenType.EOF, "Expected end of expression");
     endCompiler();
     return !parser.hadError;
-
-    // int line = -1;
-    // while (true) {
-    //     auto token = scanToken();
-
-    //     if (token.line != line) {
-    //         writef("%4d ", token.line);
-    //         line = token.line;
-    //     } else {
-    //         writef("    | ");
-    //     }
-
-    //     writefln("%2d '%s'", token.type, to!string(token.content));
-
-    //     if (token.type == TokenType.EOF) break;
-    // }
 }
