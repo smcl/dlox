@@ -10,8 +10,6 @@ import lox_compiler;
 
 int main(string[] args)
 {
-	initVM();
-
 	// testInterpreter();
 
 	if (args.length) {
@@ -28,6 +26,9 @@ int main(string[] args)
 
 
 void repl() {
+
+	auto vm = new VM();
+
 	while (true) {
 		writef("> ");
 		auto line = readln();
@@ -37,13 +38,14 @@ void repl() {
 			break;
 		}
 
-		interpret(line);
+		interpret(&vm, line);
 	}
 }
 
 void runFile(string path) {
-	string source = readFile(path);
-	InterpretResult result = interpret(source);
+	auto vm = new VM();
+	auto source = readFile(path);
+	const auto result = interpret(&vm, source);
 
 	if (result == InterpretResult.COMPILE_ERROR) {
 		exit(65);
@@ -54,7 +56,7 @@ void runFile(string path) {
 	}
 }
 
-InterpretResult interpret(string source) {
+InterpretResult interpret(VM* vm, string source) {
 	Chunk* chunk = new Chunk(8);
 	
 	if (!compile(source, chunk)) {
@@ -64,7 +66,7 @@ InterpretResult interpret(string source) {
 	vm.chunk = chunk;
 	vm.ip = 0;
 	
-	return run();
+	return vm.run();
 }
 
 
@@ -113,3 +115,18 @@ void testInterpreter() {
 	// writefln("chunk.count:    %d", chunk.count);
 	// writefln("chunk.capacity: %d", chunk.capacity);
 }  
+
+unittest { 
+    auto vm = new VM();
+
+    auto chunk = new Chunk(0);
+    auto boolConstant = chunk.addConstant(Value(true));
+    chunk.write(OpCode.CONSTANT, 666);
+    chunk.write(boolConstant, 666);
+
+    chunk.write(OpCode.NEGATE, 666);
+
+    const auto res = interpret(&vm, chunk);
+
+    assert(res == InterpretResult.RUNTIME_ERROR);
+}

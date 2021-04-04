@@ -90,3 +90,14 @@ struct ValueArray {
         this.count++;
     }
 }
+
+bool isFalsey(Value v) {
+    return v.visit!(
+        (double _) => false,
+        (bool b)   => !b,
+        (nil _)    => true,
+        (Obj o) => o.visit!(
+            (string s) => s.length == 0
+        )
+    );
+}
