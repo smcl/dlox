@@ -38,7 +38,15 @@ int disassembleInstruction(Chunk *chunk, int offset) {
         case OpCode.TRUE:
             return simpleInstruction("TRUE", offset);            
         case OpCode.FALSE:            
-            return simpleInstruction("FALSE", offset);            
+            return simpleInstruction("FALSE", offset);
+        case OpCode.POP:
+            return simpleInstruction("POP", offset);
+        case OpCode.GET_GLOBAL:
+            return constantInstruction("GET_GLOBAL", chunk, offset);
+        case OpCode.DEFINE_GLOBAL:
+            return constantInstruction("DEFINE_GLOBAL", chunk, offset);
+        case OpCode.SET_GLOBAL:
+            return constantInstruction("SET_GLOBAL", chunk, offset);
         case OpCode.EQUAL:
             return simpleInstruction("EQUAL", offset);
         case OpCode.GREATER:
@@ -59,6 +67,8 @@ int disassembleInstruction(Chunk *chunk, int offset) {
             return simpleInstruction("NOT", offset);
         case OpCode.NEGATE:
             return simpleInstruction("NEGATE", offset);
+        case OpCode.PRINT:
+            return simpleInstruction("PRINT", offset);
         case OpCode.RETURN:
             return simpleInstruction("RETURN", offset);
         default:

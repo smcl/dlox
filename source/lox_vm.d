@@ -19,6 +19,7 @@ class VM {
     int ip; /* maybe uint or size_t? */
     Value[STACK_MAX] stack;
     int sp;
+    Value[string] globals;
 
     this(){
         this.resetStack();
@@ -41,8 +42,8 @@ class VM {
 
             switch (instr) {
                 case OpCode.CONSTANT:
-                    auto constant_index = this.chunk.code[this.ip++];
-                    auto constant = this.chunk.constants.values[constant_index];
+                    const auto constant_index = this.chunk.code[this.ip++];
+                    const auto constant = this.chunk.constants.values[constant_index];
                     push(constant);
                     break;
                 case OpCode.TRUE:
@@ -51,6 +52,42 @@ class VM {
                 case OpCode.FALSE:
                     push(Value(false));
                     break;
+                case OpCode.POP:
+                    pop();
+                    break;
+                case OpCode.GET_GLOBAL:
+                    const auto global_index = this.chunk.code[this.ip++];
+                    const auto name_value = this.chunk.constants.values[global_index];
+                    const auto name = *(name_value.peek!Obj().peek!(string));
+
+                    if (!(name in this.globals)) {
+                        runtimeError("Undefined variable '%s'", name);
+                        return InterpretResult.RUNTIME_ERROR;
+                    }
+
+                    this.push(this.globals[name]);
+                    break;
+                case OpCode.DEFINE_GLOBAL:
+                    const auto global_index = this.chunk.code[this.ip++];
+                    const auto name_value = this.chunk.constants.values[global_index];
+                    const auto name = *(name_value.peek!Obj().peek!(string));
+                    this.globals[name] = this.peek(0);
+                    this.pop();
+                    break;
+
+                case OpCode.SET_GLOBAL:
+                    const auto global_index = this.chunk.code[this.ip++];
+                    const auto name_value = this.chunk.constants.values[global_index];
+                    const auto name = *(name_value.peek!Obj().peek!(string));
+
+                    if (!(name in this.globals)) {
+                        runtimeError("Undefined variable '%s'", name);
+                        return InterpretResult.RUNTIME_ERROR;
+                    }
+
+                    this.globals[name] = this.peek(0);
+                    break;
+
                 case OpCode.EQUAL:
                     Value b = this.pop();
                     Value a = this.pop();
@@ -128,9 +165,11 @@ class VM {
                 case OpCode.NOT:
                     this.push(Value(isFalsey(this.pop())));
                     break;
+                case OpCode.PRINT: 
+                    writeValue(pop());
+                    writeln("");
+                    break;
                 case OpCode.RETURN: 
-                    writeValue(this.pop());
-                    writef("\n");
                     return InterpretResult.OK;
                 default:
                     return InterpretResult.RUNTIME_ERROR;
@@ -157,6 +196,10 @@ class VM {
     Value pop() {
         this.sp -= 1;
         return this.stack[this.sp];
+    }
+
+    Value peek(int distance) {
+        return this.stack[this.sp - 1 - distance];
     }
 
     bool binary_op(

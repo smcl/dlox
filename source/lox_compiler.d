@@ -30,7 +30,7 @@ enum Precedence {
     PRIMARY
 }
 
-alias ParseFunc = void function();
+alias ParseFunc = void function(bool canAssign);
 
 struct ParseRule { 
     ParseFunc prefix;
@@ -101,6 +101,16 @@ void consume(TokenType type, string message) {
     errorAtCurrent(message);
 }
 
+bool check(TokenType type) {
+    return parser.current.type == type;
+}
+
+bool match(TokenType type) {
+    if (!check(type)) return false;
+    advance();
+    return true;
+}
+
 void emitByte(ubyte b) {
     currentChunk().write(b, parser.previous.line);
 }
@@ -139,7 +149,7 @@ void endCompiler() {
     }
 }
 
-void binary() {
+void binary(bool canAssign) {
     const TokenType operatorType = parser.previous.type;
 
     ParseRule rule = getRule(operatorType);
@@ -161,7 +171,7 @@ void binary() {
     }
 }
 
-void literal() {
+void literal(bool canAssign) {
     const TokenType operatorType = parser.previous.type;
     switch (operatorType) {
         case TokenType.TRUE:  emitByte(OpCode.TRUE);  break;
@@ -172,18 +182,17 @@ void literal() {
     }
 }
 
-void grouping() {
+void grouping(bool canAssign) {
     expression();
     consume(TokenType.RIGHT_PAREN, "Expect ')' after expression");
 }
 
-void number() { 
+void number(bool canAssign) { 
     auto value = to!double(parser.previous.content);
     emitConstant(Value(value));
 }
 
-void lox_string() {
-
+void lox_string(bool canAssign) {
     auto value = Value(
         Obj(to!string(parser.previous.content[1..$-1]))
     );
@@ -191,7 +200,22 @@ void lox_string() {
     emitConstant(value);
 }
 
-void unary() {
+void namedVariable(Token* name, bool canAssign) {
+    auto arg = identifierConstant(name);
+    
+    if (canAssign && match(TokenType.EQUAL)) {
+        expression();
+        emitBytes(OpCode.SET_GLOBAL, arg);
+    } else {
+        emitBytes(OpCode.GET_GLOBAL, arg);
+    }
+}
+
+void variable(bool canAssign) {
+    namedVariable(parser.previous, canAssign);
+}
+
+void unary(bool canAssign) {
     const TokenType operatorType = parser.previous.type;
 
     parsePrecedence(Precedence.UNARY);
@@ -234,7 +258,7 @@ void initRules() {
         TokenType.GREATER_EQUAL : ParseRule(null,        &binary, Precedence.COMPARISON),
         TokenType.LESS          : ParseRule(null,        &binary, Precedence.COMPARISON),
         TokenType.LESS_EQUAL    : ParseRule(null,        &binary, Precedence.COMPARISON),
-        TokenType.IDENTIFIER    : ParseRule(null,        null,    Precedence.NONE),
+        TokenType.IDENTIFIER    : ParseRule(&variable,   null,    Precedence.NONE),
         TokenType.STRING        : ParseRule(&lox_string, null,    Precedence.NONE),
         TokenType.NUMBER        : ParseRule(&number,     null,    Precedence.NONE),
         TokenType.AND           : ParseRule(null,        null,    Precedence.NONE),
@@ -267,13 +291,31 @@ void parsePrecedence(Precedence precedence) {
         return;
     }
 
-    prefixRule();
+    auto canAssign = precedence <= Precedence.ASSIGNMENT;
+    prefixRule(canAssign);
 
     while (precedence <= getRule(parser.current.type).precedence) {
         advance();
         auto infixRule = getRule(parser.previous.type).infix;
-        infixRule();
+        infixRule(canAssign);
     }
+
+    if (canAssign && match(TokenType.EQUAL)) {
+        error("Invalid assignment target.");
+    }
+}
+
+ubyte identifierConstant(Token* name) {
+    return makeConstant(Value(Obj(to!string(name.content))));
+}
+
+ubyte parseVariable(string errorMessage) {
+    consume(TokenType.IDENTIFIER, errorMessage);
+    return identifierConstant(parser.previous);
+}
+
+void defineVariable(ubyte global) {
+    emitBytes(OpCode.DEFINE_GLOBAL, global);
 }
 
 ParseRule getRule(TokenType type) {
@@ -282,6 +324,75 @@ ParseRule getRule(TokenType type) {
 
 void expression() {
     parsePrecedence(Precedence.ASSIGNMENT);
+}
+
+void varDeclaration() {
+    auto global = parseVariable("Expect variable name.");
+
+    if (match(TokenType.EQUAL)) {
+        expression();
+    } else { 
+        emitByte(OpCode.NIL);
+    }
+
+    consume(TokenType.SEMICOLON, "Expect ';' after variable declaration");
+
+    defineVariable(global);
+}
+
+void expressionStatement() {
+    expression();
+    consume(TokenType.SEMICOLON, "Expect ';' after expression.");
+    emitByte(OpCode.POP);
+}
+
+void printStatement() {
+    expression();
+    consume(TokenType.SEMICOLON, "Expect ';' after value.");
+    emitByte(OpCode.PRINT);
+}
+
+void synchronize() {
+    parser.panicMode = false;
+
+    while (parser.current.type != TokenType.EOF) {
+        if (parser.previous.type == TokenType.SEMICOLON) return;
+
+        switch (parser.current.type) {
+            case TokenType.CLASS:
+            case TokenType.FUN:
+            case TokenType.VAR:
+            case TokenType.FOR:
+            case TokenType.IF:
+            case TokenType.WHILE:
+            case TokenType.PRINT:
+            case TokenType.RETURN:
+                return;
+            
+            default:
+                // do nothing
+        }
+
+        advance();
+    }
+}
+
+void declaration() {
+    if (match(TokenType.VAR)) {
+        varDeclaration();
+    } else {
+        statement();
+    }
+
+    if (parser.panicMode) synchronize();    
+}
+
+void statement() {
+    if (match(TokenType.PRINT)) {
+        printStatement();
+    } else { 
+        expressionStatement();
+    }
 }
 
 bool compile(string source, Chunk *chunk) {
@@ -293,8 +404,11 @@ bool compile(string source, Chunk *chunk) {
     parser.panicMode = false;
 
     advance();
-    expression();
-    consume(TokenType.EOF, "Expected end of expression");
+
+    while (!match(TokenType.EOF)) {
+        declaration();
+    }
+
     endCompiler();
     return !parser.hadError;
 }
