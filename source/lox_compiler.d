@@ -30,6 +30,8 @@ enum Precedence {
     PRIMARY
 }
 
+const size_t LOCALS_MAX = 256;
+
 alias ParseFunc = void function(bool canAssign);
 
 struct ParseRule { 
@@ -38,9 +40,20 @@ struct ParseRule {
     Precedence precedence;
 }
 
+struct Local {
+    Token name;
+    int depth;
+}
+
+struct Compiler {
+    Local[LOCALS_MAX] locals;
+    int localCount;
+    int scopeDepth;
+}
+
 Scanner scanner;
 Parser parser;
-
+Compiler *current;
 Chunk* compilingChunk;
 
 Chunk* currentChunk() { 
@@ -139,6 +152,12 @@ void emitConstant(Value value) {
     emitBytes(OpCode.CONSTANT, makeConstant(value));
 }
 
+void initCompiler(Compiler *compiler) {
+    compiler.localCount = 0;
+    compiler.scopeDepth = 0;
+    current = compiler;
+}
+
 void endCompiler() { 
     emitReturn();
 
@@ -146,6 +165,21 @@ void endCompiler() {
         if (!parser.hadError) {
             disassembleChunk(currentChunk(), "code");
         }
+    }
+}
+
+void beginScope() {
+    current.scopeDepth++;
+}
+
+void endScope() {
+    current.scopeDepth--;
+
+    while (current.localCount > 0 &&
+           current.locals[current.localCount - 1].depth > 
+            current.scopeDepth) {
+        emitByte(OpCode.POP);
+        current.localCount--;
     }
 }
 
@@ -201,13 +235,23 @@ void lox_string(bool canAssign) {
 }
 
 void namedVariable(Token* name, bool canAssign) {
-    auto arg = identifierConstant(name);
+    ubyte getOp, setOp;
+    auto arg = resolveLocal(current, name);
+
+    if (arg != -1) {
+        getOp = OpCode.GET_LOCAL;
+        setOp = OpCode.SET_LOCAL;
+    } else {
+        arg = identifierConstant(name);
+        getOp = OpCode.GET_GLOBAL;
+        setOp = OpCode.SET_GLOBAL;
+    }
     
     if (canAssign && match(TokenType.EQUAL)) {
         expression();
-        emitBytes(OpCode.SET_GLOBAL, arg);
+        emitBytes(setOp, to!ubyte(arg));
     } else {
-        emitBytes(OpCode.GET_GLOBAL, arg);
+        emitBytes(getOp, to!ubyte(arg));
     }
 }
 
@@ -309,12 +353,76 @@ ubyte identifierConstant(Token* name) {
     return makeConstant(Value(Obj(to!string(name.content))));
 }
 
+bool identifiersEqual(Token *a, Token *b) {
+    writefln("??? [%s] == [%s] ???", a.content, b.content);
+    return a.content == b.content;
+}
+
+int resolveLocal(Compiler* compiler, Token* name) {
+    for (int i = compiler.localCount - 1; i >= 0; i--) {
+        auto local = compiler.locals[i];
+        if (identifiersEqual(name, &(local.name))) {
+            if (local.depth == -1) {
+                error("Can't read local variable in its own initializer.");
+            }
+            return i;
+        }
+    }
+    return -1;
+}
+
+void addLocal(Token name) {
+    if (current.localCount == LOCALS_MAX) {
+        error("Too many local variables in function.");
+        return;
+    }
+
+    Local* local = &current.locals[current.localCount++];
+    local.name = name;
+    local.depth = -1;
+}
+
+void declareVariable() {
+    if (current.scopeDepth == 0) {
+        return;
+    }
+
+    auto name = parser.previous;
+    for (int i = current.localCount - 1; i >= 0; i--) {
+        auto local = current.locals[i];
+        if (local.depth != -1 && local.depth < current.scopeDepth) {
+            break;
+        }
+
+        if (identifiersEqual(name, &local.name)) {
+            error("Already variable with this name in scope");
+        }
+    }
+
+    addLocal(*name);
+}
+
 ubyte parseVariable(string errorMessage) {
     consume(TokenType.IDENTIFIER, errorMessage);
+
+    declareVariable();
+    if (current.scopeDepth > 0) {
+        return 0;
+    }
+
     return identifierConstant(parser.previous);
 }
 
+void markInitialized() {
+    current.locals[current.localCount - 1].depth = current.scopeDepth;
+}
+
 void defineVariable(ubyte global) {
+    if (current.scopeDepth > 0) {
+        markInitialized();
+        return;
+    }
+
     emitBytes(OpCode.DEFINE_GLOBAL, global);
 }
 
@@ -324,6 +432,14 @@ ParseRule getRule(TokenType type) {
 
 void expression() {
     parsePrecedence(Precedence.ASSIGNMENT);
+}
+
+void block() {
+    while (!check(TokenType.RIGHT_BRACE) && !check(TokenType.EOF)) {
+        declaration();
+    }
+
+    consume(TokenType.RIGHT_BRACE, "Expect '}' after block.");
 }
 
 void varDeclaration() {
@@ -390,6 +506,10 @@ void declaration() {
 void statement() {
     if (match(TokenType.PRINT)) {
         printStatement();
+    } else if (match(TokenType.LEFT_BRACE)) {
+        beginScope();
+        block();
+        endScope();
     } else { 
         expressionStatement();
     }
@@ -398,6 +518,8 @@ void statement() {
 bool compile(string source, Chunk *chunk) {
     initRules();
     scanner = new Scanner(source);
+    Compiler compiler;
+    initCompiler(&compiler);
     compilingChunk = chunk;
 
     parser.hadError = false;

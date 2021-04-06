@@ -10,9 +10,7 @@ import lox_compiler;
 
 int main(string[] args)
 {
-	// testInterpreter();
-
-	if (args.length) {
+	if (args.length == 1) {
 		repl();
 	} else if (args.length == 2) {
 		runFile(args[1]);

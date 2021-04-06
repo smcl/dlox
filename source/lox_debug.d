@@ -21,6 +21,12 @@ int simpleInstruction(string name, int offset) {
     return offset + 1;
 }
 
+int byteInstruction(string name, Chunk* chunk, int offset) {
+    auto slot = chunk.code[offset + 1];
+    writefln("%-16s %4d\n", name, slot);
+    return offset + 2;
+}
+
 int disassembleInstruction(Chunk *chunk, int offset) {
     writef("%04d ", offset);
 
@@ -41,6 +47,10 @@ int disassembleInstruction(Chunk *chunk, int offset) {
             return simpleInstruction("FALSE", offset);
         case OpCode.POP:
             return simpleInstruction("POP", offset);
+        case OpCode.GET_LOCAL:
+            return byteInstruction("GET_LOCAL", chunk, offset);
+        case OpCode.SET_LOCAL:
+            return byteInstruction("SET_LOCAL", chunk, offset);
         case OpCode.GET_GLOBAL:
             return constantInstruction("GET_GLOBAL", chunk, offset);
         case OpCode.DEFINE_GLOBAL:

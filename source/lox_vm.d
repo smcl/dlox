@@ -55,6 +55,17 @@ class VM {
                 case OpCode.POP:
                     pop();
                     break;
+
+                case OpCode.GET_LOCAL:
+                    const auto slot = this.chunk.code[this.ip++];
+                    this.push(this.stack[slot]);
+                    break;
+
+                case OpCode.SET_LOCAL:
+                    const auto slot = this.chunk.code[this.ip++];
+                    this.stack[slot] = this.peek(0);
+                    break;
+
                 case OpCode.GET_GLOBAL:
                     const auto global_index = this.chunk.code[this.ip++];
                     const auto name_value = this.chunk.constants.values[global_index];
