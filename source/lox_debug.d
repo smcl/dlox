@@ -27,6 +27,14 @@ int byteInstruction(string name, Chunk* chunk, int offset) {
     return offset + 2;
 }
 
+int jumpInstruction(string name, int sign, Chunk* chunk, int offset) {
+    ushort jump = cast(ubyte)(chunk.code[offset + 1] << 8);
+    jump = jump | chunk.code[offset + 2];
+
+    writefln("%-16s %4d -> %d\n", name, offset, offset + 3 + sign * jump);
+    return offset + 3;
+}
+
 int disassembleInstruction(Chunk *chunk, int offset) {
     writef("%04d ", offset);
 
@@ -79,6 +87,12 @@ int disassembleInstruction(Chunk *chunk, int offset) {
             return simpleInstruction("NEGATE", offset);
         case OpCode.PRINT:
             return simpleInstruction("PRINT", offset);
+        case OpCode.JUMP:
+            return jumpInstruction("JUMP", 1, chunk, offset);    
+        case OpCode.JUMP_IF_FALSE:
+            return jumpInstruction("JUMP_IF_FALSE", 1, chunk, offset);
+        case OpCode.LOOP:
+            return jumpInstruction("LOOP", -1, chunk, offset);            
         case OpCode.RETURN:
             return simpleInstruction("RETURN", offset);
         default:

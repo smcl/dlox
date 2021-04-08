@@ -133,6 +133,25 @@ void emitBytes(ubyte b1, ubyte b2) {
     emitByte(b2);
 }
 
+void emitLoop(int loopStart) {
+    emitByte(OpCode.LOOP);
+
+    auto offset = currentChunk().count - loopStart + 2;
+    if (offset > 65_536) {
+        error("Loop body too large.");
+    }
+
+    emitByte((offset >> 8) & 0xFF);
+    emitByte(offset & 0xFF);
+}
+
+int emitJump(ubyte instruction) {
+    emitByte(instruction);
+    emitByte(0xff);
+    emitByte(0xff);
+    return currentChunk().count - 2;
+}
+
 void emitReturn() { 
     emitByte(OpCode.RETURN);
 }
@@ -150,6 +169,17 @@ ubyte makeConstant(Value value) {
 
 void emitConstant(Value value) {
     emitBytes(OpCode.CONSTANT, makeConstant(value));
+}
+
+void patchJump(int offset) {
+    const auto jump = currentChunk().count - offset - 2;
+
+    if (jump > 255) { 
+        error("Too much code to jump over.");
+    }
+
+    currentChunk().code[offset] = (jump >> 8) & 0xff;
+    currentChunk().code[offset + 1] = jump & 0xff;
 }
 
 void initCompiler(Compiler *compiler) {
@@ -224,6 +254,26 @@ void grouping(bool canAssign) {
 void number(bool canAssign) { 
     auto value = to!double(parser.previous.content);
     emitConstant(Value(value));
+}
+
+void or_(bool canAssign) {
+    auto elseJump = emitJump(OpCode.JUMP_IF_FALSE);
+    auto endJump = emitJump(OpCode.JUMP);
+
+    patchJump(elseJump);
+    emitByte(OpCode.POP);
+
+    parsePrecedence(Precedence.OR);
+    patchJump(endJump);
+}
+
+void and_(bool canAssign) {
+    auto endJump = emitJump(OpCode.JUMP_IF_FALSE);
+
+    emitByte(OpCode.POP);
+    parsePrecedence(Precedence.AND);
+
+    patchJump(endJump);
 }
 
 void lox_string(bool canAssign) {
@@ -305,7 +355,7 @@ void initRules() {
         TokenType.IDENTIFIER    : ParseRule(&variable,   null,    Precedence.NONE),
         TokenType.STRING        : ParseRule(&lox_string, null,    Precedence.NONE),
         TokenType.NUMBER        : ParseRule(&number,     null,    Precedence.NONE),
-        TokenType.AND           : ParseRule(null,        null,    Precedence.NONE),
+        TokenType.AND           : ParseRule(null,        &and_,   Precedence.NONE),
         TokenType.CLASS         : ParseRule(null,        null,    Precedence.NONE),
         TokenType.ELSE          : ParseRule(null,        null,    Precedence.NONE),
         TokenType.FALSE         : ParseRule(&literal,    null,    Precedence.NONE),
@@ -313,7 +363,7 @@ void initRules() {
         TokenType.FUN           : ParseRule(null,        null,    Precedence.NONE),
         TokenType.IF            : ParseRule(null,        null,    Precedence.NONE),
         TokenType.NIL           : ParseRule(&literal,    null,    Precedence.NONE),
-        TokenType.OR            : ParseRule(null,        null,    Precedence.NONE),
+        TokenType.OR            : ParseRule(null,        &or_,    Precedence.NONE),
         TokenType.PRINT         : ParseRule(null,        null,    Precedence.NONE),
         TokenType.RETURN        : ParseRule(null,        null,    Precedence.NONE),
         TokenType.SUPER         : ParseRule(null,        null,    Precedence.NONE),
@@ -462,10 +512,96 @@ void expressionStatement() {
     emitByte(OpCode.POP);
 }
 
+void forStatement() {
+    beginScope();
+
+    consume(TokenType.LEFT_PAREN, "Expect '(' after 'for'.");
+    
+    if (match(TokenType.SEMICOLON)) {
+        // no initializer;
+    } else if (match(TokenType.VAR)) {
+        varDeclaration();
+    } else {
+        expressionStatement();
+    }
+
+    auto loopStart = currentChunk().count;
+    auto exitJump = -1;
+
+    if (!match(TokenType.SEMICOLON)) {
+        expression();
+        consume(TokenType.SEMICOLON, "Expect ';' after loop condition.");
+
+        exitJump = emitJump(OpCode.JUMP_IF_FALSE);
+        emitByte(OpCode.POP);
+    }
+
+    if (!match(TokenType.RIGHT_PAREN)) {
+        const auto bodyJump = emitJump(OpCode.JUMP);
+        const auto incrementStart = currentChunk().count;
+
+        expression();
+        emitByte(OpCode.POP);
+        consume(TokenType.RIGHT_PAREN, "Expect ')' after for clauses.");
+
+        emitLoop(loopStart);
+        loopStart = incrementStart;
+        patchJump(bodyJump);
+    }
+
+    statement();
+    
+    emitLoop(loopStart);
+
+    if (exitJump != -1) {
+        patchJump(exitJump);
+        emitByte(OpCode.POP);
+    }
+
+    endScope();
+}
+
+void ifStatement() {
+    consume(TokenType.LEFT_PAREN, "Expect '(' after 'if'.");
+    expression();
+    consume(TokenType.RIGHT_PAREN, "Expect ')' after condition");
+
+    auto thenJump = emitJump(OpCode.JUMP_IF_FALSE);
+    emitByte(OpCode.POP);
+    statement();
+
+    auto elseJump = emitJump(OpCode.JUMP);
+    patchJump(thenJump);
+    emitByte(OpCode.POP);
+
+    if (match(TokenType.ELSE)) {
+        statement();
+    }
+    patchJump(elseJump);
+}
+
 void printStatement() {
     expression();
     consume(TokenType.SEMICOLON, "Expect ';' after value.");
     emitByte(OpCode.PRINT);
+}
+
+void whileStatement() {
+    auto loopStart = currentChunk().count;
+
+    consume(TokenType.LEFT_PAREN, "Expect '(' after 'while'.");
+    expression();
+    consume(TokenType.RIGHT_PAREN, "Expect ')' after condition.");
+
+    auto exitJump = emitJump(OpCode.JUMP_IF_FALSE);
+
+    emitByte(OpCode.POP);
+    statement();
+
+    emitLoop(loopStart);
+
+    patchJump(exitJump);
+    emitByte(OpCode.POP);
 }
 
 void synchronize() {
@@ -506,6 +642,12 @@ void declaration() {
 void statement() {
     if (match(TokenType.PRINT)) {
         printStatement();
+    } else if (match(TokenType.FOR)) {
+        forStatement();
+    } else if (match(TokenType.IF)) {
+        ifStatement();
+    } else if (match(TokenType.WHILE)) {
+        whileStatement();
     } else if (match(TokenType.LEFT_BRACE)) {
         beginScope();
         block();

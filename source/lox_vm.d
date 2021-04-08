@@ -38,12 +38,11 @@ class VM {
                 disassembleInstruction(this.chunk, this.ip);
             }
 
-            const ubyte instr = this.chunk.code[this.ip++];
+            const ubyte instr = readByte();
 
             switch (instr) {
                 case OpCode.CONSTANT:
-                    const auto constant_index = this.chunk.code[this.ip++];
-                    const auto constant = this.chunk.constants.values[constant_index];
+                    const auto constant = readConstant();                    
                     push(constant);
                     break;
                 case OpCode.TRUE:
@@ -55,22 +54,16 @@ class VM {
                 case OpCode.POP:
                     pop();
                     break;
-
                 case OpCode.GET_LOCAL:
-                    const auto slot = this.chunk.code[this.ip++];
+                    const auto slot = readByte();
                     this.push(this.stack[slot]);
                     break;
-
                 case OpCode.SET_LOCAL:
-                    const auto slot = this.chunk.code[this.ip++];
+                    const auto slot = readByte();
                     this.stack[slot] = this.peek(0);
                     break;
-
                 case OpCode.GET_GLOBAL:
-                    const auto global_index = this.chunk.code[this.ip++];
-                    const auto name_value = this.chunk.constants.values[global_index];
-                    const auto name = *(name_value.peek!Obj().peek!(string));
-
+                    const auto name = readString();
                     if (!(name in this.globals)) {
                         runtimeError("Undefined variable '%s'", name);
                         return InterpretResult.RUNTIME_ERROR;
@@ -79,18 +72,12 @@ class VM {
                     this.push(this.globals[name]);
                     break;
                 case OpCode.DEFINE_GLOBAL:
-                    const auto global_index = this.chunk.code[this.ip++];
-                    const auto name_value = this.chunk.constants.values[global_index];
-                    const auto name = *(name_value.peek!Obj().peek!(string));
+                    const auto name = readString();
                     this.globals[name] = this.peek(0);
                     this.pop();
                     break;
-
                 case OpCode.SET_GLOBAL:
-                    const auto global_index = this.chunk.code[this.ip++];
-                    const auto name_value = this.chunk.constants.values[global_index];
-                    const auto name = *(name_value.peek!Obj().peek!(string));
-
+                    const auto name = readString();
                     if (!(name in this.globals)) {
                         runtimeError("Undefined variable '%s'", name);
                         return InterpretResult.RUNTIME_ERROR;
@@ -180,12 +167,48 @@ class VM {
                     writeValue(pop());
                     writeln("");
                     break;
+                case OpCode.JUMP:
+                    const ushort offset = readShort();
+                    this.ip += offset;
+                    break;
+                case OpCode.JUMP_IF_FALSE:
+                    const ushort offset = readShort();
+                    if (isFalsey(peek(0))) {
+                        this.ip += offset;
+                    }
+                    break;
+                case OpCode.LOOP:
+                    const auto offset = readShort();
+                    this.ip -= offset;
+                    break;
                 case OpCode.RETURN: 
                     return InterpretResult.OK;
                 default:
                     return InterpretResult.RUNTIME_ERROR;
             }
         }
+    }
+
+    ubyte readByte() {
+        return this.chunk.code[this.ip++];
+    }
+
+    ushort readShort() {
+        this.ip += 2;
+        const ushort hi = this.chunk.code[this.ip - 2] << 8;
+        const ushort lo = this.chunk.code[this.ip - 1];
+        return hi | lo;
+    }
+
+    string readString() { 
+        const auto index = readByte();
+        const auto value = this.chunk.constants.values[index];
+        return *(value.peek!Obj().peek!(string));
+    }
+
+    Value readConstant() {
+        const auto constant_index = readByte();
+        return this.chunk.constants.values[constant_index];
     }
 
     void resetStack() {
