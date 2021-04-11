@@ -4,6 +4,7 @@ import std.stdio;
 import std.conv;
 
 import lox_debug;
+import lox_object;
 import lox_scanner;
 import common;
 import value;
@@ -45,7 +46,14 @@ struct Local {
     int depth;
 }
 
+enum FunctionType {
+    Function,
+    Script
+}
+
 struct Compiler {
+    Func* func;
+    FunctionType type;
     Local[LOCALS_MAX] locals;
     int localCount;
     int scopeDepth;
@@ -54,10 +62,9 @@ struct Compiler {
 Scanner scanner;
 Parser parser;
 Compiler *current;
-Chunk* compilingChunk;
 
 Chunk* currentChunk() { 
-    return compilingChunk;
+    return current.func.chunk;
 }
 
 void error(string message) {
@@ -182,20 +189,30 @@ void patchJump(int offset) {
     currentChunk().code[offset + 1] = jump & 0xff;
 }
 
-void initCompiler(Compiler *compiler) {
+void initCompiler(Compiler *compiler, FunctionType type) {
+    compiler.func = new Func(0, new Chunk(8), null);
+    compiler.type = type;
     compiler.localCount = 0;
     compiler.scopeDepth = 0;
     current = compiler;
+
+    auto local = &current.locals[current.localCount++];
+    local.depth = 0;
+    local.name.content = "".dup;
 }
 
-void endCompiler() { 
+Func* endCompiler() { 
     emitReturn();
+
+    auto func = current.func;
 
     debug {
         if (!parser.hadError) {
-            disassembleChunk(currentChunk(), "code");
+            disassembleChunk(currentChunk(), func.name != null ? func.name : "<script>");
         }
     }
+
+    return func;
 }
 
 void beginScope() {
@@ -404,7 +421,6 @@ ubyte identifierConstant(Token* name) {
 }
 
 bool identifiersEqual(Token *a, Token *b) {
-    writefln("??? [%s] == [%s] ???", a.content, b.content);
     return a.content == b.content;
 }
 
@@ -657,12 +673,11 @@ void statement() {
     }
 }
 
-bool compile(string source, Chunk *chunk) {
+Func* compile(string source) {
     initRules();
     scanner = new Scanner(source);
     Compiler compiler;
-    initCompiler(&compiler);
-    compilingChunk = chunk;
+    initCompiler(&compiler, FunctionType.Script);
 
     parser.hadError = false;
     parser.panicMode = false;
@@ -673,6 +688,6 @@ bool compile(string source, Chunk *chunk) {
         declaration();
     }
 
-    endCompiler();
-    return !parser.hadError;
+    auto func = endCompiler();
+    return parser.hadError ? null : func;
 }

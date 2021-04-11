@@ -7,6 +7,7 @@ import value;
 import lox_vm;
 import core.stdc.stdlib;
 import lox_compiler;
+import lox_object;
 
 int main(string[] args)
 {
@@ -55,14 +56,17 @@ void runFile(string path) {
 }
 
 InterpretResult interpret(VM* vm, string source) {
-	Chunk* chunk = new Chunk(8);
+	auto func = compile(source);
 	
-	if (!compile(source, chunk)) {
+	if (func == null) {
 		return InterpretResult.COMPILE_ERROR;
 	}
 
-	vm.chunk = chunk;
-	vm.ip = 0;
+	vm.push(Value(Obj(*func)));
+	auto frame = &vm.frames[vm.frameCount++];
+	frame.func = func;
+	frame.ip = 0; // just a guess, translating the C is hard, it was `func.chunk.code`;
+	frame.slots = vm.stack;
 	
 	return vm.run();
 }

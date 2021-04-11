@@ -13,3 +13,6 @@ dlox-test-*
 *.o
 *.obj
 *.lst
+x64/
+profilegc.log
+.vs/

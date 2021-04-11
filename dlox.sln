@@ -1,0 +1,16 @@
+Microsoft Visual Studio Solution File, Format Version 11.00
+# Visual Studio 2010
+Project("{59AE3BA9-2143-46C3-B86D-4DDC625728AF}") = "dlox", ".dub/dlox.visualdproj", "{C9BF88E7-FF1E-4C1C-AE47-A92ED14FD626}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		debug|x64 = debug|x64
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{C9BF88E7-FF1E-4C1C-AE47-A92ED14FD626}.debug|x64.ActiveCfg = debug|x64
+		{C9BF88E7-FF1E-4C1C-AE47-A92ED14FD626}.debug|x64.Build.0 = debug|x64
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal

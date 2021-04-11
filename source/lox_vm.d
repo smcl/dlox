@@ -5,8 +5,16 @@ import value;
 import std.stdio;
 import std.variant;
 import lox_debug;
+import lox_object;
 
-const size_t STACK_MAX = 256;
+const size_t FRAMES_MAX = 64;
+const size_t STACK_MAX = FRAMES_MAX * 255;
+
+struct CallFrame {
+    Func* func;
+    ubyte ip;
+    Value[] slots;
+}
 
 enum InterpretResult {
     OK,
@@ -15,8 +23,9 @@ enum InterpretResult {
 }
 
 class VM {
-    Chunk* chunk;
-    int ip; /* maybe uint or size_t? */
+    CallFrame[FRAMES_MAX] frames;
+    int frameCount;
+
     Value[STACK_MAX] stack;
     int sp;
     Value[string] globals;
@@ -26,6 +35,8 @@ class VM {
     }
 
     InterpretResult run() {
+        auto frame = &this.frames[this.frameCount -1];
+
         while (true) {
             debug {
                 writef("          ");
@@ -35,14 +46,13 @@ class VM {
                     writef(" ]");
                 }
                 writef("\n");
-                disassembleInstruction(this.chunk, this.ip);
+                disassembleInstruction(frame.func.chunk, frame.ip);
             }
 
-            const ubyte instr = readByte();
-
+            const ubyte instr = readByte(frame);
             switch (instr) {
                 case OpCode.CONSTANT:
-                    const auto constant = readConstant();                    
+                    const auto constant = readConstant(frame);                    
                     push(constant);
                     break;
                 case OpCode.TRUE:
@@ -55,31 +65,31 @@ class VM {
                     pop();
                     break;
                 case OpCode.GET_LOCAL:
-                    const auto slot = readByte();
-                    this.push(this.stack[slot]);
+                    const auto slot = readByte(frame);
+                    this.push(frame.slots[slot]);
                     break;
                 case OpCode.SET_LOCAL:
-                    const auto slot = readByte();
-                    this.stack[slot] = this.peek(0);
+                    const auto slot = readByte(frame);
+                    frame.slots[slot] = this.peek(0);
                     break;
                 case OpCode.GET_GLOBAL:
-                    const auto name = readString();
+                    const auto name = readString(frame);
                     if (!(name in this.globals)) {
-                        runtimeError("Undefined variable '%s'", name);
+                        runtimeError(frame, "Undefined variable '%s'", name);
                         return InterpretResult.RUNTIME_ERROR;
                     }
 
                     this.push(this.globals[name]);
                     break;
                 case OpCode.DEFINE_GLOBAL:
-                    const auto name = readString();
+                    const auto name = readString(frame);
                     this.globals[name] = this.peek(0);
                     this.pop();
                     break;
                 case OpCode.SET_GLOBAL:
-                    const auto name = readString();
+                    const auto name = readString(frame);
                     if (!(name in this.globals)) {
-                        runtimeError("Undefined variable '%s'", name);
+                        runtimeError(frame, "Undefined variable '%s'", name);
                         return InterpretResult.RUNTIME_ERROR;
                     }
 
@@ -96,6 +106,7 @@ class VM {
                     break;
                 case OpCode.GREATER:
                     const auto ok = this.binary_op( 
+                        frame,
                         (double a, double b) => cast(Value)(a > b), 
                         (Obj a,    Obj b)    => doubleOpOnly(this, a, b));
                     if (!ok) {
@@ -104,6 +115,7 @@ class VM {
                     break;
                 case OpCode.LESS:
                     const auto ok = this.binary_op(
+                        frame,
                         (double a, double b) => cast(Value)(a < b),
                         (Obj a,    Obj b)    => doubleOpOnly(this, a, b));
                     if (!ok) {
@@ -112,6 +124,7 @@ class VM {
                     break;
                 case OpCode.ADD:
                     const auto ok = this.binary_op(
+                        frame,
                         (double a, double b) => cast(Value)(a + b),
                         (Obj a,    Obj b)    => objectAdd(a, b));
                     if (!ok) {
@@ -120,6 +133,7 @@ class VM {
                     break;
                 case OpCode.SUBTRACT:
                     const auto ok = this.binary_op(
+                        frame,
                         (double a, double b) => cast(Value)(a - b),
                         (Obj a,    Obj b)    => doubleOpOnly(this, a, b));
                     if (!ok) {
@@ -128,6 +142,7 @@ class VM {
                     break;
                 case OpCode.MULTIPLY:
                     const auto ok = this.binary_op(
+                        frame,
                         (double a, double b) => cast(Value)(a * b), 
                         (Obj a,    Obj b)    => doubleOpOnly(this, a, b));
                     if (!ok) {
@@ -136,6 +151,7 @@ class VM {
                     break;
                 case OpCode.DIVIDE:
                     const auto ok = this.binary_op(
+                        frame,
                         (double a, double b) => cast(Value)(a / b),
                         (Obj a,    Obj b)    => doubleOpOnly(this, a, b));
                     if (!ok) {
@@ -150,7 +166,7 @@ class VM {
                             return true;
                         },
                         (_) {
-                            runtimeError("Operand must be a number.");
+                            runtimeError(frame, "Operand must be a number.");
                             return false;
                         }
                     );
@@ -168,18 +184,18 @@ class VM {
                     writeln("");
                     break;
                 case OpCode.JUMP:
-                    const ushort offset = readShort();
-                    this.ip += offset;
+                    const ushort offset = readShort(frame);
+                    frame.ip += offset;
                     break;
                 case OpCode.JUMP_IF_FALSE:
-                    const ushort offset = readShort();
+                    const ushort offset = readShort(frame);
                     if (isFalsey(peek(0))) {
-                        this.ip += offset;
+                        frame.ip += offset;
                     }
                     break;
                 case OpCode.LOOP:
-                    const auto offset = readShort();
-                    this.ip -= offset;
+                    const auto offset = readShort(frame);
+                    frame.ip -= offset;
                     break;
                 case OpCode.RETURN: 
                     return InterpretResult.OK;
@@ -189,36 +205,37 @@ class VM {
         }
     }
 
-    ubyte readByte() {
-        return this.chunk.code[this.ip++];
+    ubyte readByte(CallFrame* frame) {
+        return frame.func.chunk.code[frame.ip++];
     }
 
-    ushort readShort() {
-        this.ip += 2;
-        const ushort hi = this.chunk.code[this.ip - 2] << 8;
-        const ushort lo = this.chunk.code[this.ip - 1];
+    ushort readShort(CallFrame* frame) {
+        frame.ip += 2;
+        const ushort hi = frame.func.chunk.code[frame.ip - 2] << 8;
+        const ushort lo = frame.func.chunk.code[frame.ip - 1];
         return hi | lo;
     }
 
-    string readString() { 
-        const auto index = readByte();
-        const auto value = this.chunk.constants.values[index];
+    string readString(CallFrame* frame) { 
+        const auto index = readByte(frame);
+        const auto value = frame.func.chunk.constants.values[index];
         return *(value.peek!Obj().peek!(string));
     }
 
-    Value readConstant() {
-        const auto constant_index = readByte();
-        return this.chunk.constants.values[constant_index];
+    Value readConstant(CallFrame* frame) {
+        const auto constant_index = readByte(frame);
+        return frame.func.chunk.constants.values[constant_index];
     }
 
     void resetStack() {
         this.sp = 0;
+        this.frameCount = 0;
     }    
 
-    void runtimeError(string format, ...) {
+    void runtimeError(CallFrame *frame, string format, ...) {
         stderr.writefln(format, _arguments);
 
-        auto line = this.chunk.lines[this.ip - 1];
+        auto line = frame.func.chunk.lines[frame.ip - 1];
         stderr.writefln("[line %d] in script\n", line);
     }
 
@@ -237,6 +254,7 @@ class VM {
     }
 
     bool binary_op(
+        CallFrame *frame,
         Value delegate(double lhs, double rhs) double_op,
         Value delegate(Obj lhs, Obj rhs) object_op) {
 
@@ -266,7 +284,7 @@ class VM {
         );
 
         if (!ok) {
-            this.runtimeError("Both operands must be numbers or strings.");
+            this.runtimeError(frame, "Both operands must be numbers or strings.");
             return false;
         }
         
@@ -278,14 +296,20 @@ Value objectAdd(Obj a, Obj b) {
     return a.visit!(
         (string aStr) => 
             b.visit!(
-                (string bStr) => Value(Obj(aStr ~ bStr))
-                /* no other types in Obj */
+                (string bStr) => Value(Obj(aStr ~ bStr)),
+                // TODO: addition of funcs doesn't make sense
+                //       we'll need to handle this better at
+                //       some point in the future
+                (Func _) => Value(null)
             ),
-        /* no other types in Obj */
+
+        // TODO: as above - adding a Func doesn't make sense
+        (Func _) => Value(null)
     );
 }
 
 Value doubleOpOnly(VM vm, Obj a, Obj b) {
-    vm.runtimeError("This is a .");
+    // TODO: move this back into VM
+    vm.runtimeError(null, "This is a wendys.");
     return Value(null);
 }

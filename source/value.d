@@ -4,15 +4,25 @@ import std.stdio;
 import std.typecons;
 import std.variant;
 import common;
+import lox_object;
 
 alias nil = typeof(null);
 alias Value = Algebraic!(bool, nil, double, Obj);
-alias Obj = Algebraic!(string);
+
 
 void writeObject(Obj o) {
     o.visit!(
-        (string s) => writef("%s", s)
+        (string s) => writef("%s", s),
+        (Func f) => writeFunction(f)
     );
+}
+
+void writeFunction(Func f) {
+    if (f.name == null) {
+        writef("<script>");
+        return;
+    }
+    writef("<fn %s>", f.name);
 }
 
 void writeValue(Value v) {
@@ -97,7 +107,8 @@ bool isFalsey(Value v) {
         (bool b)   => !b,
         (nil _)    => true,
         (Obj o) => o.visit!(
-            (string s) => s.length == 0
+            (string s) => s.length == 0,
+            (Func f) => false
         )
     );
 }
