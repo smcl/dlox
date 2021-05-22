@@ -14,7 +14,8 @@ void writeObject(Obj* o) {
     (*o).visit!(
         (string s) => writef("%s", s),
         (Func* f) => writeFunction(f),
-        (Native* f) => writef("<native fn>")
+        (Native* f) => writef("<native fn>"),
+        (Closure* c) => writeFunction(c.func)
     );
 }
 

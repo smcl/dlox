@@ -47,8 +47,8 @@ struct Local {
 }
 
 enum FunctionType {
-    Function,
-    Script
+    Script,
+    Function
 }
 
 struct Compiler {
@@ -564,7 +564,7 @@ void lox_function(FunctionType type) {
 
     // create function object
     auto func = endCompiler();
-    emitBytes(OpCode.CONSTANT, makeConstant(new Value(new Obj(func))));
+    emitBytes(OpCode.CLOSURE, makeConstant(new Value(new Obj(func))));
 }
 
 void funDeclaration() {

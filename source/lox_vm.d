@@ -13,7 +13,7 @@ const size_t FRAMES_MAX = 64;
 const size_t STACK_MAX = FRAMES_MAX * 255;
 
 struct CallFrame {
-    Func* func;
+    Closure* closure;
     ubyte ip;
     int fp;
     Value*[] slots;
@@ -56,7 +56,7 @@ class VM {
 			       writef(" ]");
 			   }
 			   writef("\n");
-			   disassembleInstruction(frame.func.chunk, frame.ip);
+			   disassembleInstruction(frame.closure.func.chunk, frame.ip);
 			}
 
             const ubyte instr = readByte(frame);
@@ -214,6 +214,11 @@ class VM {
 					}
                     frame = this.frames[this.frameCount - 1];
 					break;
+                case OpCode.CLOSURE:
+                    auto funcObj = *(readConstant(frame).peek!(Obj*)());
+                    auto closure = new Closure(*funcObj.peek!(Func*)());
+                    push(new Value(new Obj(closure)));
+                    break;
                 case OpCode.RETURN: 
                     auto result = this.pop();
                     this.frameCount--;
@@ -234,26 +239,26 @@ class VM {
     }
 
     ubyte readByte(CallFrame* frame) {
-        return frame.func.chunk.code[frame.ip++];
+        return frame.closure.func.chunk.code[frame.ip++];
     }
 
     ushort readShort(CallFrame* frame) {
         frame.ip += 2;
-        const ushort hi = frame.func.chunk.code[frame.ip - 2] << 8;
-        const ushort lo = frame.func.chunk.code[frame.ip - 1];
+        const ushort hi = frame.closure.func.chunk.code[frame.ip - 2] << 8;
+        const ushort lo = frame.closure.func.chunk.code[frame.ip - 1];
         return hi | lo;
     }
 
     string readString(CallFrame* frame) { 
         ubyte index = readByte(frame);
-        Value* value = frame.func.chunk.constants.values[index];
+        Value* value = frame.closure.func.chunk.constants.values[index];
         auto obj = (*value).peek!(Obj*)();
 		return *(*obj).peek!(string);
     }
 
     Value* readConstant(CallFrame* frame) {
         auto constant_index = readByte(frame);
-        return frame.func.chunk.constants.values[constant_index];
+        return frame.closure.func.chunk.constants.values[constant_index];
     }
 
     void resetStack() {
@@ -269,7 +274,7 @@ class VM {
         stderr.writefln(format, args);
 
         for (auto i = this.frameCount - 1; i >= 0; i--) {
-            auto func = frame.func;
+            auto func = frame.closure.func;
             auto instruction = frame.ip - 1;
             stderr.writef("[line %d] in ", func.chunk.lines[instruction]);
             if (func.name == null) {
@@ -301,9 +306,9 @@ class VM {
         return this.stack[this.sp - 1 - distance];
     }
 
-    bool call(Func* func, int argCount) {
-        if (argCount != func.arity) {
-            runtimeError(null, "Expected %d arguments but got %d", func.arity, argCount);
+    bool call(Closure* closure, int argCount) {
+        if (argCount != closure.func.arity) {
+            runtimeError(null, "Expected %d arguments but got %d", closure.func.arity, argCount);
             return false;
         }
 
@@ -313,7 +318,7 @@ class VM {
         }
 
         auto frame = this.frames[this.frameCount++];
-        frame.func = func;
+        frame.closure = closure;
         frame.ip = 0;
         frame.fp = this.sp - argCount - 1;
         frame.slots = this.stack[this.sp - argCount - 1..$];
@@ -324,8 +329,8 @@ class VM {
     bool callValue(Value* callee, int argCount) {
         auto res = (*callee).visit!(
             (Obj* obj) => (*obj).visit!(
-                (Func* fun) {
-                    return this.call(fun, argCount);
+                (Closure* closure) {
+                    return this.call(closure, argCount);
                 },
                 (Native* fun) {
                     auto res = fun.func(argCount, this.stack[this.sp - argCount - 1..this.sp]);
@@ -435,12 +440,14 @@ Obj* objectAdd(Obj* a, Obj* b) {
                 //       we'll need to handle this better at
                 //       some point in the future
                 (Func* _) => null,
-                (Native* _) => null
+                (Native* _) => null,
+				(Closure* _) => null
             ),
 
         // TODO: as above - adding a Func/Native doesn't make sense
         (Func* f) => null,
-        (Native* _) => null
+        (Native* _) => null,
+        (Closure* _) => null
     );
 }
 

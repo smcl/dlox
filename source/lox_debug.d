@@ -91,6 +91,14 @@ int disassembleInstruction(Chunk *chunk, int offset) {
             return jumpInstruction("LOOP", -1, chunk, offset);
         case OpCode.CALL:
             return byteInstruction("CALL", chunk, offset);
+        case OpCode.CLOSURE:
+            offset++;
+            auto constant = chunk.code[offset++];
+            writef("%-16s %4d", "OP_CLOSURE", constant);
+            writeValue(chunk.constants.values[constant]);
+            writeln("");
+            return offset;
+
         case OpCode.RETURN:
             return simpleInstruction("RETURN", offset);
         default:

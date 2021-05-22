@@ -58,14 +58,15 @@ void runFile(string path) {
 
 InterpretResult interpret(VM* vm, string source) {
 	auto func = compile(source);
+	auto closure = new Closure(func);
 	
 	if (func == null) {
 		return InterpretResult.COMPILE_ERROR;
 	}
 
-	auto funcValue = new Value(new Obj(func));
-	vm.push(funcValue);
-	vm.call(func, 0);
+	auto closureValue = new Value(new Obj(closure));
+	vm.push(closureValue);
+	vm.call(closure, 0);
 	
 	return vm.run();
 }
