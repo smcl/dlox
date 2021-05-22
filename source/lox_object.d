@@ -1,6 +1,7 @@
 module lox_object;
 
 import common;
+import value;
 import std.variant;
 
 // ObjString* copyString(const char* chars, int length) {
@@ -24,4 +25,10 @@ struct Func {
     string name;
 }
 
-alias Obj = Algebraic!(string, Func);
+alias NativeFunc = Value* delegate(int argCount, Value*[] args);
+
+struct Native {
+    NativeFunc func;
+}
+
+alias Obj = Algebraic!(Func*, Native*, string);

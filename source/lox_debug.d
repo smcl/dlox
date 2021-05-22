@@ -9,21 +9,17 @@ int constantInstruction(string name, Chunk *chunk, int offset) {
     writef("%-16s %4d '", name, constant);
     writeValue(chunk.constants.values[constant]);
     writef("'\n");
-
-    // writef("\t offset = %d\n", offset);
-    // writef("\t constant = %d\n", constant);
-
     return offset + 2;
 }
 
 int simpleInstruction(string name, int offset) {
-    writef("%s\n", name);
+    writefln("%s", name);
     return offset + 1;
 }
 
 int byteInstruction(string name, Chunk* chunk, int offset) {
     auto slot = chunk.code[offset + 1];
-    writefln("%-16s %4d\n", name, slot);
+    writefln("%-16s %4d", name, slot);
     return offset + 2;
 }
 
@@ -31,7 +27,7 @@ int jumpInstruction(string name, int sign, Chunk* chunk, int offset) {
     ushort jump = cast(ubyte)(chunk.code[offset + 1] << 8);
     jump = jump | chunk.code[offset + 2];
 
-    writefln("%-16s %4d -> %d\n", name, offset, offset + 3 + sign * jump);
+    writefln("%-16s %4d -> %d", name, offset, offset + 3 + sign * jump);
     return offset + 3;
 }
 
@@ -92,7 +88,9 @@ int disassembleInstruction(Chunk *chunk, int offset) {
         case OpCode.JUMP_IF_FALSE:
             return jumpInstruction("JUMP_IF_FALSE", 1, chunk, offset);
         case OpCode.LOOP:
-            return jumpInstruction("LOOP", -1, chunk, offset);            
+            return jumpInstruction("LOOP", -1, chunk, offset);
+        case OpCode.CALL:
+            return byteInstruction("CALL", chunk, offset);
         case OpCode.RETURN:
             return simpleInstruction("RETURN", offset);
         default:

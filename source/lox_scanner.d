@@ -111,7 +111,7 @@ class Scanner {
                 switch(this.source[this.start+1]) {
                     case 'a': return checkKeyword(2, 3, "lse", TokenType.FALSE);
                     case 'o': return checkKeyword(2, 1, "r", TokenType.FOR);
-                    case 'u': return checkKeyword(2, 2, "un", TokenType.FUN);
+                    case 'u': return checkKeyword(1, 2, "un", TokenType.FUN);
                     default: return TokenType.IDENTIFIER;
                 }
             case 'i': return checkKeyword(1, 1, "f", TokenType.IF);

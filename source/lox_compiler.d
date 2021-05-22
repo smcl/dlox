@@ -52,6 +52,7 @@ enum FunctionType {
 }
 
 struct Compiler {
+    Compiler *enclosing;
     Func* func;
     FunctionType type;
     Local[LOCALS_MAX] locals;
@@ -144,7 +145,7 @@ void emitLoop(int loopStart) {
     emitByte(OpCode.LOOP);
 
     auto offset = currentChunk().count - loopStart + 2;
-    if (offset > 65_536) {
+    if (offset > 65_535) {
         error("Loop body too large.");
     }
 
@@ -160,10 +161,11 @@ int emitJump(ubyte instruction) {
 }
 
 void emitReturn() { 
+    emitByte(OpCode.NIL);
     emitByte(OpCode.RETURN);
 }
 
-ubyte makeConstant(Value value) {
+ubyte makeConstant(Value* value) {
     const auto constant = currentChunk().addConstant(value);
 
     if (constant > 255) {
@@ -174,7 +176,7 @@ ubyte makeConstant(Value value) {
     return constant;
 }
 
-void emitConstant(Value value) {
+void emitConstant(Value* value) {
     emitBytes(OpCode.CONSTANT, makeConstant(value));
 }
 
@@ -190,11 +192,16 @@ void patchJump(int offset) {
 }
 
 void initCompiler(Compiler *compiler, FunctionType type) {
+    compiler.enclosing = current;
     compiler.func = new Func(0, new Chunk(8), null);
     compiler.type = type;
     compiler.localCount = 0;
     compiler.scopeDepth = 0;
     current = compiler;
+
+    if (type != FunctionType.Script) {
+        current.func.name = parser.previous.content.dup;
+    }
 
     auto local = &current.locals[current.localCount++];
     local.depth = 0;
@@ -212,6 +219,7 @@ Func* endCompiler() {
         }
     }
 
+    current = current.enclosing;
     return func;
 }
 
@@ -252,6 +260,11 @@ void binary(bool canAssign) {
     }
 }
 
+void call(bool canAssign) {
+    auto argCount = argumentList();
+    emitBytes(OpCode.CALL, argCount);
+}
+
 void literal(bool canAssign) {
     const TokenType operatorType = parser.previous.type;
     switch (operatorType) {
@@ -270,7 +283,7 @@ void grouping(bool canAssign) {
 
 void number(bool canAssign) { 
     auto value = to!double(parser.previous.content);
-    emitConstant(Value(value));
+    emitConstant(new Value(value));
 }
 
 void or_(bool canAssign) {
@@ -294,8 +307,8 @@ void and_(bool canAssign) {
 }
 
 void lox_string(bool canAssign) {
-    auto value = Value(
-        Obj(to!string(parser.previous.content[1..$-1]))
+    auto value = new Value(
+       new Obj(to!string(parser.previous.content[1..$-1]))
     );
 
     emitConstant(value);
@@ -350,7 +363,7 @@ void initRules() {
 
     // kinda annoying that I'm doing this at runtime :-/
     rules = [
-        TokenType.LEFT_PAREN    : ParseRule(&grouping,   null,    Precedence.NONE),
+        TokenType.LEFT_PAREN    : ParseRule(&grouping,   &call,   Precedence.CALL),
         TokenType.RIGHT_PAREN   : ParseRule(null,        null,    Precedence.NONE),
         TokenType.LEFT_BRACE    : ParseRule(null,        null,    Precedence.NONE), 
         TokenType.RIGHT_BRACE   : ParseRule(null,        null,    Precedence.NONE),
@@ -417,7 +430,7 @@ void parsePrecedence(Precedence precedence) {
 }
 
 ubyte identifierConstant(Token* name) {
-    return makeConstant(Value(Obj(to!string(name.content))));
+    return makeConstant(new Value(new Obj(to!string(name.content))));
 }
 
 bool identifiersEqual(Token *a, Token *b) {
@@ -480,6 +493,7 @@ ubyte parseVariable(string errorMessage) {
 }
 
 void markInitialized() {
+    if (current.scopeDepth == 0) return;
     current.locals[current.localCount - 1].depth = current.scopeDepth;
 }
 
@@ -490,6 +504,22 @@ void defineVariable(ubyte global) {
     }
 
     emitBytes(OpCode.DEFINE_GLOBAL, global);
+}
+
+ubyte argumentList() {
+    ubyte argCount = 0;
+    if (!check(TokenType.RIGHT_PAREN)) {
+        do { 
+            expression();
+            if (argCount == 255) { 
+                error("Functions can't have more than 255 arguments");
+			}
+            argCount++;
+		} while(match(TokenType.COMMA));
+	}
+
+    consume(TokenType.RIGHT_PAREN, "Expect ')' after arguments.");
+    return argCount;
 }
 
 ParseRule getRule(TokenType type) {
@@ -506,6 +536,42 @@ void block() {
     }
 
     consume(TokenType.RIGHT_BRACE, "Expect '}' after block.");
+}
+
+void lox_function(FunctionType type) {
+    auto compiler = new Compiler();
+    initCompiler(compiler, type);
+    beginScope();
+
+    // compile params
+    consume(TokenType.LEFT_PAREN, "Expect '(' after function name.");
+    if (!check(TokenType.RIGHT_PAREN)) {
+        do {
+            current.func.arity++;
+            if (current.func.arity > 255) { 
+                errorAtCurrent("Can't have more than 255 parameters");
+            }
+
+            auto paramConstant = parseVariable("Expect parameter name");
+            defineVariable(paramConstant);
+        }while(match(TokenType.COMMA));
+    }
+    consume(TokenType.RIGHT_PAREN, "Expect ')' after params.");
+
+    // body
+    consume(TokenType.LEFT_BRACE, "Expect '{' before function body");
+    block();
+
+    // create function object
+    auto func = endCompiler();
+    emitBytes(OpCode.CONSTANT, makeConstant(new Value(new Obj(func))));
+}
+
+void funDeclaration() {
+    auto global = parseVariable("Expect function name.");
+    markInitialized();
+    lox_function(FunctionType.Function);
+    defineVariable(global);
 }
 
 void varDeclaration() {
@@ -602,6 +668,20 @@ void printStatement() {
     emitByte(OpCode.PRINT);
 }
 
+void returnStatement() {
+  if (current.type == FunctionType.Script) {
+    error("Can't return from top-level code");
+  }
+
+  if (match(TokenType.SEMICOLON)) {
+    emitReturn();
+  } else {
+    expression();
+    consume(TokenType.SEMICOLON, "Expect ';' after return value.");
+    emitByte(OpCode.RETURN);
+  }
+}
+
 void whileStatement() {
     auto loopStart = currentChunk().count;
 
@@ -646,7 +726,10 @@ void synchronize() {
 }
 
 void declaration() {
-    if (match(TokenType.VAR)) {
+
+    if (match(TokenType.FUN)) {
+        funDeclaration();
+    } else if (match(TokenType.VAR)) {
         varDeclaration();
     } else {
         statement();
@@ -662,6 +745,8 @@ void statement() {
         forStatement();
     } else if (match(TokenType.IF)) {
         ifStatement();
+    } else if (match(TokenType.RETURN)) {
+        returnStatement();
     } else if (match(TokenType.WHILE)) {
         whileStatement();
     } else if (match(TokenType.LEFT_BRACE)) {
@@ -676,8 +761,8 @@ void statement() {
 Func* compile(string source) {
     initRules();
     scanner = new Scanner(source);
-    Compiler compiler;
-    initCompiler(&compiler, FunctionType.Script);
+    auto compiler = new Compiler();
+    initCompiler(compiler, FunctionType.Script);
 
     parser.hadError = false;
     parser.panicMode = false;

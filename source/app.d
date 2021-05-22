@@ -1,3 +1,5 @@
+module app;
+
 import std.file;
 import std.stdio;
 import std.utf;
@@ -25,7 +27,6 @@ int main(string[] args)
 
 
 void repl() {
-
 	auto vm = new VM();
 
 	while (true) {
@@ -62,15 +63,12 @@ InterpretResult interpret(VM* vm, string source) {
 		return InterpretResult.COMPILE_ERROR;
 	}
 
-	vm.push(Value(Obj(*func)));
-	auto frame = &vm.frames[vm.frameCount++];
-	frame.func = func;
-	frame.ip = 0; // just a guess, translating the C is hard, it was `func.chunk.code`;
-	frame.slots = vm.stack;
+	auto funcValue = new Value(new Obj(func));
+	vm.push(funcValue);
+	vm.call(func, 0);
 	
 	return vm.run();
 }
-
 
 string readFile(string path) {
 	try {
@@ -85,50 +83,4 @@ string readFile(string path) {
 	
 	// shouldn't reach this
 	return "";
-}
-
-void testInterpreter() {
-	Chunk *chunk = new Chunk(0);
-
-	auto constant = chunk.addConstant(Value(1.2));
-	chunk.write(OpCode.CONSTANT, 666);
-	chunk.write(constant, 666);
-
-	constant = chunk.addConstant(Value(3.4));
-	chunk.write(OpCode.CONSTANT, 666);
-	chunk.write(constant, 666);
-
-	constant = chunk.addConstant(Value(5.6));
-	chunk.write(OpCode.CONSTANT, 666);
-	chunk.write(constant, 666);
-
-	chunk.write(OpCode.DIVIDE, 666);
-
-	chunk.write(OpCode.NEGATE, 666);
-	chunk.write(OpCode.NEGATE, 666);
-	chunk.write(OpCode.NEGATE, 666);
-
-	chunk.write(OpCode.RETURN, 666);
-
-	// for (int i = 0; i < chunk.count; i++) {
-	// 	writefln("chunk: %d", chunk.code[i]);
-	// }
-
-	// writefln("chunk.count:    %d", chunk.count);
-	// writefln("chunk.capacity: %d", chunk.capacity);
-}  
-
-unittest { 
-    auto vm = new VM();
-
-    auto chunk = new Chunk(0);
-    auto boolConstant = chunk.addConstant(Value(true));
-    chunk.write(OpCode.CONSTANT, 666);
-    chunk.write(boolConstant, 666);
-
-    chunk.write(OpCode.NEGATE, 666);
-
-    const auto res = interpret(&vm, chunk);
-
-    assert(res == InterpretResult.RUNTIME_ERROR);
 }

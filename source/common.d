@@ -27,7 +27,14 @@ enum OpCode: ubyte {
     JUMP,
     JUMP_IF_FALSE,
     LOOP,
+    CALL,
     RETURN
+}
+
+enum InterpretResult {
+    OK,
+    COMPILE_ERROR,
+    RUNTIME_ERROR
 }
 
 int grow_capacity(int capacity) {
@@ -87,7 +94,7 @@ struct Chunk {
         this.count++;
     }
 
-    ubyte addConstant(Value v) {
+    ubyte addConstant(Value* v) {
         this.constants.write(v);
         return to!ubyte(this.constants.count - 1);
     }

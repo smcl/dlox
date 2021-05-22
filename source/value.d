@@ -7,17 +7,18 @@ import common;
 import lox_object;
 
 alias nil = typeof(null);
-alias Value = Algebraic!(bool, nil, double, Obj);
+alias Value = Algebraic!(bool, nil, double, Obj*);
 
 
-void writeObject(Obj o) {
-    o.visit!(
+void writeObject(Obj* o) {
+    (*o).visit!(
         (string s) => writef("%s", s),
-        (Func f) => writeFunction(f)
+        (Func* f) => writeFunction(f),
+        (Native* f) => writef("<native fn>")
     );
 }
 
-void writeFunction(Func f) {
+void writeFunction(Func* f) {
     if (f.name == null) {
         writef("<script>");
         return;
@@ -25,8 +26,8 @@ void writeFunction(Func f) {
     writef("<fn %s>", f.name);
 }
 
-void writeValue(Value v) {
-    v.visit!(
+void writeValue(Value* v) {
+    (*v).visit!(
         (double d) => writef("%g", d),
         (bool b) { 
             if (b) { 
@@ -36,20 +37,20 @@ void writeValue(Value v) {
             }
         },
         (nil) => write("nil"),
-        (Obj o) => writeObject(o)
+        (Obj* o) => writeObject(o)
     );
 }
 
-bool valuesEqual(Value a, Value b) {
-    return a.visit!(
+bool valuesEqual(Value* a, Value* b) {
+    return (*a).visit!(
         (double aNum) => 
-            b.visit!(
+            (*b).visit!(
                 (double bNum) => aNum == bNum,
                 (_) => false
             ),
             
         (bool aBool) =>
-            b.visit!(
+            (*b).visit!(
                 (bool bBool) => aBool == bBool,
                 (_) => false
             ),
@@ -57,8 +58,8 @@ bool valuesEqual(Value a, Value b) {
         (nil n) => false,
 
         // TODO: This is wrong and needs to be filled out
-        (Obj aObj) => b.visit!(
-            (Obj bObj) => objectEqual(aObj, bObj),
+        (Obj* aObj) => (*b).visit!(
+            (Obj* bObj) => objectEqual(*aObj, *bObj),
             (_) => false
         )
     );
@@ -81,7 +82,7 @@ bool objectEqual(Obj a, Obj b) {
 struct ValueArray {
     int capacity;
     int count;
-    Value[] values;
+    Value*[] values;
 
     this(int capacity) {
         this.capacity = 0;
@@ -89,11 +90,11 @@ struct ValueArray {
         this.values = null;
     }
 
-    void write(Value value) {
+    void write(Value* value) {
         if (this.capacity < this.count + 1) {
             const int oldCapacity = this.capacity;
             this.capacity = grow_capacity(oldCapacity);
-            this.values = grow_array!Value(this.values, oldCapacity, this.capacity);
+            this.values = grow_array!(Value*)(this.values, oldCapacity, this.capacity);
         }
 
         this.values[this.count] = value;
@@ -101,14 +102,16 @@ struct ValueArray {
     }
 }
 
-bool isFalsey(Value v) {
-    return v.visit!(
-        (double _) => false,
+bool isFalsey(Value* v) {
+    return (*v).visit!(
+        (double d) => false,
         (bool b)   => !b,
-        (nil _)    => true,
-        (Obj o) => o.visit!(
+        (nil n)    => true,
+        (Obj* o) => (*o).visit!(
             (string s) => s.length == 0,
-            (Func f) => false
+            (b) => false
+            // (Func* f) => f != null,
+            // (Native* f) => f != null
         )
     );
 }
