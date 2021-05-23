@@ -31,7 +31,7 @@ enum Precedence {
     PRIMARY
 }
 
-const size_t LOCALS_MAX = 256;
+const size_t UBYTE_COUNT = 256;
 
 alias ParseFunc = void function(bool canAssign);
 
@@ -46,6 +46,11 @@ struct Local {
     int depth;
 }
 
+struct Upvalue {
+	ubyte index;
+	bool isLocal;
+}
+
 enum FunctionType {
     Script,
     Function
@@ -55,8 +60,9 @@ struct Compiler {
     Compiler *enclosing;
     Func* func;
     FunctionType type;
-    Local[LOCALS_MAX] locals;
+    Local[UBYTE_COUNT] locals;
     int localCount;
+    Upvalue[UBYTE_COUNT] upvalues;
     int scopeDepth;
 }
 
@@ -193,7 +199,7 @@ void patchJump(int offset) {
 
 void initCompiler(Compiler *compiler, FunctionType type) {
     compiler.enclosing = current;
-    compiler.func = new Func(0, new Chunk(8), null);
+    compiler.func = new Func(0, 0, new Chunk(8), null);
     compiler.type = type;
     compiler.localCount = 0;
     compiler.scopeDepth = 0;
@@ -231,8 +237,7 @@ void endScope() {
     current.scopeDepth--;
 
     while (current.localCount > 0 &&
-           current.locals[current.localCount - 1].depth > 
-            current.scopeDepth) {
+           current.locals[current.localCount - 1].depth > current.scopeDepth) {
         emitByte(OpCode.POP);
         current.localCount--;
     }
@@ -321,6 +326,11 @@ void namedVariable(Token* name, bool canAssign) {
     if (arg != -1) {
         getOp = OpCode.GET_LOCAL;
         setOp = OpCode.SET_LOCAL;
+    }
+	else if ((arg = resolveUpvalue(current, name)) != -1)
+	{
+        getOp = OpCode.GET_UPVALUE;
+        setOp = OpCode.SET_UPVALUE;
     } else {
         arg = identifierConstant(name);
         getOp = OpCode.GET_GLOBAL;
@@ -450,8 +460,48 @@ int resolveLocal(Compiler* compiler, Token* name) {
     return -1;
 }
 
+int addUpvalue(Compiler* compiler, ubyte index, bool isLocal) {
+    auto upvalueCount = compiler.func.upvalueCount;
+
+    for  (int i = 0; i < upvalueCount; i++) {
+        auto upvalue = compiler.upvalues[i];
+        if (upvalue.index == index && upvalue.isLocal == isLocal) {
+            return i;
+		}
+	}
+
+    if (upvalueCount == UBYTE_COUNT) {
+        error("Too many closure variables in function.");
+        return 0;
+	}
+
+    compiler.upvalues[upvalueCount].isLocal = isLocal;
+    compiler.upvalues[upvalueCount].index = index;
+
+    return compiler.func.upvalueCount++;
+}
+
+int resolveUpvalue(Compiler* compiler, Token* name) {
+    if (compiler.enclosing == null) {
+        return -1;
+	}
+
+    auto local = resolveLocal(compiler.enclosing, name);
+
+    if (local != -1) {
+        return addUpvalue(compiler, to!ubyte(local), true);
+	}
+
+    auto upvalue = resolveUpvalue(compiler.enclosing, name);
+    if (upvalue != -1) {
+        return addUpvalue(compiler, upvalue.to!ubyte(), false);
+	}
+
+    return -1;
+}
+
 void addLocal(Token name) {
-    if (current.localCount == LOCALS_MAX) {
+    if (current.localCount == UBYTE_COUNT) {
         error("Too many local variables in function.");
         return;
     }
@@ -565,6 +615,11 @@ void lox_function(FunctionType type) {
     // create function object
     auto func = endCompiler();
     emitBytes(OpCode.CLOSURE, makeConstant(new Value(new Obj(func))));
+
+    for (int i = 0; i < func.upvalueCount; i++) {
+        emitByte(compiler.upvalues[i].isLocal ? 1 : 0);
+        emitByte(compiler.upvalues[i].index);
+	}
 }
 
 void funDeclaration() {

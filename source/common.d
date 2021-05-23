@@ -14,6 +14,8 @@ enum OpCode: ubyte {
     DEFINE_GLOBAL,
     SET_GLOBAL,
     SET_LOCAL,
+    GET_UPVALUE,
+    SET_UPVALUE,
     EQUAL,
     GREATER,
     LESS,
