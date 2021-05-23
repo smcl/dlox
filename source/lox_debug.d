@@ -1,6 +1,7 @@
 module lox_debug;
 
 import common;
+import lox_object;
 import std.stdio;
 import value;
 
@@ -55,6 +56,10 @@ int disassembleInstruction(Chunk *chunk, int offset) {
             return byteInstruction("GET_LOCAL", chunk, offset);
         case OpCode.SET_LOCAL:
             return byteInstruction("SET_LOCAL", chunk, offset);
+        case OpCode.GET_UPVALUE:
+            return byteInstruction("GET_UPVALUE", chunk, offset);
+        case OpCode.SET_UPVALUE:
+            return byteInstruction("SET_UPVALUE", chunk, offset);
         case OpCode.GET_GLOBAL:
             return constantInstruction("GET_GLOBAL", chunk, offset);
         case OpCode.DEFINE_GLOBAL:
@@ -97,6 +102,16 @@ int disassembleInstruction(Chunk *chunk, int offset) {
             writef("%-16s %4d", "OP_CLOSURE", constant);
             writeValue(chunk.constants.values[constant]);
             writeln("");
+
+			auto funcObj = *chunk.constants.values[constant].peek!(Obj*)();
+			auto func = *funcObj.peek!(Func*)();
+            for (int j = 0; j < func.upvalueCount; j++) {
+                auto isLocal = chunk.code[offset++];
+                auto index = chunk.code[offset++];
+                writef("%04d      |                     %s %s\n",
+					   offset - 2, isLocal ? "local" : "upvalue", index);
+			}
+
             return offset;
 
         case OpCode.RETURN:

@@ -15,7 +15,8 @@ void writeObject(Obj* o) {
         (string s) => writef("%s", s),
         (Func* f) => writeFunction(f),
         (Native* f) => writef("<native fn>"),
-        (Closure* c) => writeFunction(c.func)
+        (Closure* c) => writeFunction(c.func),
+        (ObjUpvalue* u) => write("upvalue")
     );
 }
 
@@ -70,10 +71,8 @@ bool objectEqual(Obj a, Obj b) {
     return a.visit!(
         (string aStr) => b.visit!(
             (string bStr) { 
-                writefln("{%s} == {%s}", aStr, bStr);
                 return aStr == bStr;
             },
-            // (string bStr) => aStr == bStr,
             (_) => false
         ),
         (_) => false
@@ -110,7 +109,7 @@ bool isFalsey(Value* v) {
         (nil n)    => true,
         (Obj* o) => (*o).visit!(
             (string s) => s.length == 0,
-            (b) => false
+            (_) => false
             // (Func* f) => f != null,
             // (Native* f) => f != null
         )

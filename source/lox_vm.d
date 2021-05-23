@@ -105,6 +105,14 @@ class VM {
 
                     this.globals[name] = this.peek(0);
                     break;
+                case OpCode.GET_UPVALUE:
+                    auto slot = readByte(frame);
+                    push(frame.closure.upvalues[slot].location);
+                    break;
+                case OpCode.SET_UPVALUE:
+                    auto slot = readByte(frame);
+                    frame.closure.upvalues[slot].location = this.peek(0);
+                    break;
 
                 case OpCode.EQUAL:
                     auto b = this.pop();
@@ -218,6 +226,18 @@ class VM {
                     auto funcObj = *(readConstant(frame).peek!(Obj*)());
                     auto closure = new Closure(*funcObj.peek!(Func*)());
                     push(new Value(new Obj(closure)));
+
+                    for (auto i = 0; i < closure.upvalueCount; i++) {
+                        auto isLocal = readByte(frame);
+                        auto index = readByte(frame);
+
+                        if (isLocal) {
+                            closure.upvalues[i] = captureUpvalue(frame.slots[index]);
+						} else { 
+                            closure.upvalues[i] = frame.closure.upvalues[index];
+						}
+					}
+
                     break;
                 case OpCode.RETURN: 
                     auto result = this.pop();
@@ -345,6 +365,11 @@ class VM {
         return res;
 	}
 
+    ObjUpvalue* captureUpvalue(Value* local) {
+        auto createdUpvalue = new ObjUpvalue(local);
+        return createdUpvalue;
+	}
+
     // fuuuuuj
     bool binary_bool_op(CallFrame *frame, bool delegate(double lhs, double rhs) double_op, Obj* delegate(Obj* lhs, Obj* rhs) object_op) {
 		auto b = this.pop();
@@ -441,13 +466,15 @@ Obj* objectAdd(Obj* a, Obj* b) {
                 //       some point in the future
                 (Func* _) => null,
                 (Native* _) => null,
-				(Closure* _) => null
+				(Closure* _) => null,
+                (ObjUpvalue* _) => null /* TODO: I think this is PROBABLY wrong */
             ),
 
         // TODO: as above - adding a Func/Native doesn't make sense
         (Func* f) => null,
         (Native* _) => null,
-        (Closure* _) => null
+        (Closure* _) => null,
+        (ObjUpvalue* _) => null /* TODO: I think this is PROBABLY wrong */
     );
 }
 
